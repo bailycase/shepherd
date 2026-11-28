@@ -46,7 +46,7 @@ struct ForgeIssueContent: View {
                         ForgeFetching(number: key.ref.number)
                     }
                 }
-                .padding(.horizontal, layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter)
+                .padding(.horizontal, layout.isPad ? MobileLayout.forgePadInset : MobileLayout.gutter)
                 .padding(.bottom, MobileLayout.sectionSpacing)
                 .frame(maxWidth: MobileLayout.forgeDetailMaxWidth)
                 .frame(maxWidth: .infinity)
@@ -65,7 +65,7 @@ struct ForgeIssueContent: View {
         .toolbar(removing: layout.verticalBars || layout.isPad ? .title : nil)
         .toolbar {
             if !layout.isPad, !layout.verticalBars {
-                ToolbarItem(placement: .principal) { ForgeTitle(title: title, subtitle: subtitle) }
+                ToolbarItem(placement: .principal) { Group { ForgeTitle(title: title, subtitle: subtitle) }.shBarTitleType() }
             }
             if !layout.isPad || layout.verticalBars {
                 ToolbarOverflowMenu { menu(store, model) }
@@ -100,16 +100,16 @@ struct ForgeIssueContent: View {
                     .padding(.top, SH.Space.s)
             }
         }
-        .padding(.horizontal, SH.Space.xs)
+        .padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
         if let failure = store.failure {
             SHBanner(.failed, title: failure) {
                 Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
             }
         }
         if model.body.isEmpty {
-            Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary).padding(.horizontal, SH.Space.xs)
+            Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary).padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
         } else {
-            ProseView(prose: model.body).equatable().padding(.horizontal, SH.Space.xs)
+            ProseView(prose: model.body).equatable().padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
         }
         if model.detail.summary.state == .open {
             handOff(model, store: store)
@@ -148,7 +148,7 @@ struct ForgeIssueContent: View {
     }
 
     @ViewBuilder private func bar(_ store: ForgeStore, _ model: ForgeIssueModel?) -> some View {
-        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter) {
+        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.forgePadInset : MobileLayout.gutter) {
             ReviewGlassBarItem(title: "Comment") { store.sheet = ForgeSheet(key: key, kind: .comment) }
             if let thread = model?.thread {
                 ReviewGlassBarItem(title: "Open thread", emphasis: .main) {

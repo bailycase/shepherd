@@ -183,6 +183,7 @@ public struct SHTouchQueueRow: View {
     let steerLabel: String
     let back: (() -> Void)?
     let undo: (() -> Void)?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `held` marks a message an editor is open on elsewhere. `steer` is a queued row's labelled
     /// Steer now (`steerLabel`: Steer now, or Send now while pi is idle); `back` a steering row's Back
@@ -212,6 +213,28 @@ public struct SHTouchQueueRow: View {
         let steering = kind == .steering
         // The row's text and its Back to the queue are one VoiceOver element; Steer now, which the app also
         // offers as a named action, stays a button of its own beside it.
+        // From the accessibility sizes the words keep the row's width: the image count, "Steering ↩" and Steer now go under them.
+        let stacked = typeSize.isAccessibilitySize
+        let imagesLabel = Label("\(images)", systemImage: "photo")
+            .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+            .labelStyle(SHTouchQueueInlineLabel())
+            .accessibilityLabel(images == 1 ? "1 image" : "\(images) images")
+        // "Steering ↩": the word and Back to the queue, one button.
+        let steeringWords = HStack(spacing: SH.Space.xs) {
+            Text("Steering")
+            Image(systemName: "arrow.uturn.backward").font(.sh(.ui, weight: .regular))
+        }
+        .font(.shSans(SHTouchQueueMetrics.headerSize))
+        .foregroundStyle(sh.textSecondary)
+        let steeringView = Group {
+            if let back {
+                Button(action: back) { steeringWords.frame(minHeight: SH.Height.touch).contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back to the queue")
+            } else {
+                steeringWords
+            }
+        }
         let content = HStack(spacing: SH.Space.l) {
             Group {
                 switch kind {
@@ -227,41 +250,28 @@ public struct SHTouchQueueRow: View {
             .frame(width: SHTouchQueueMetrics.numberWidth)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
-                    .lineLimit(2).truncationMode(.tail)
+                    .lineLimit(stacked ? 6 : 2).truncationMode(.tail)
                 if held {
                     Label("Being edited", systemImage: "pencil")
                         .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                         .labelStyle(SHTouchQueueInlineLabel())
                 }
+                if stacked {
+                    if images > 0 { imagesLabel }
+                    if steering { steeringView }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if images > 0 {
-                Label("\(images)", systemImage: "photo")
-                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                    .labelStyle(SHTouchQueueInlineLabel())
-                    .accessibilityLabel(images == 1 ? "1 image" : "\(images) images")
-            }
-            if steering {
-                // "Steering ↩": the word and Back to the queue, one button.
-                let words = HStack(spacing: SH.Space.xs) {
-                    Text("Steering")
-                    Image(systemName: "arrow.uturn.backward").font(.sh(.ui, weight: .regular))
-                }
-                .font(.shSans(SHTouchQueueMetrics.headerSize))
-                .foregroundStyle(sh.textSecondary)
-                if let back {
-                    Button(action: back) { words.frame(minHeight: SH.Height.touch).contentShape(Rectangle()) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Back to the queue")
-                } else {
-                    words
-                }
+            if !stacked {
+                if images > 0 { imagesLabel }
+                if steering { steeringView }
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .modifier(SHTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
-        return HStack(spacing: SH.Space.m) {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.m, stackedSpacing: 0)
+        return adaptive {
             content
             if !steering, let steer {
                 Button(steerLabel, action: steer)

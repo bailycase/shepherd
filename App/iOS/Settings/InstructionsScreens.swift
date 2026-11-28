@@ -217,17 +217,17 @@ struct InstructionsEditorScreen: View {
         .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 VStack(spacing: SH.Space.xxs / 2) {
                     Text(file.fileName)
-                        .font(.shMono(SHTextStyle.ui.size, .semibold))
+                        .font(.shBarMono(SHTextStyle.ui.size, .semibold))
                         .foregroundStyle(Color.sh.textPrimary)
                     Text(InstructionsCopy.scope + (isEdited ? " · edited" : ""))
-                        .font(.shSans(MobileLayout.settingsCaptionSize))
+                        .font(.shBarSans(MobileLayout.settingsCaptionSize))
                         .foregroundStyle(Color.sh.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
-            }
+            }.shBarTitleType() }
             ToolbarItem(placement: .confirmationAction) {
                 if model.busy {
                     SHBusyLabel("Saving…")

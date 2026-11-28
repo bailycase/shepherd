@@ -256,6 +256,38 @@ extension Font {
         .shFace(size, weight: weight, mono: true, style: .body)
     }
 
+    // MARK: A bar's own text
+
+    /// `sh(_:weight:)` for the text of a navigation bar (a title over its subtitle): scaled with Dynamic Type up to `xxxLarge` and no
+    /// further. A bar is a fixed height between its glass buttons, so its title past that size overlapped its own subtitle. SwiftUI's
+    /// `dynamicTypeSize(...)` cannot cap these fonts (they are scaled when built), so the cap is here.
+    @MainActor public static func shBar(_ style: SHTextStyle, weight: Font.Weight? = nil) -> Font {
+        shBarFace(style.size, weight: weight ?? style.weight, mono: style.isMonospaced, style: style)
+    }
+
+    /// `shSans(_:_:)` for a bar's text (see `shBar`).
+    @MainActor public static func shBarSans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        shBarFace(size, weight: weight, mono: false, style: .body)
+    }
+
+    /// `shMono(_:_:)` for a bar's text (see `shBar`).
+    @MainActor public static func shBarMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        shBarFace(size, weight: weight, mono: true, style: .body)
+    }
+
+    @MainActor private static func shBarFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, style: SHTextStyle) -> Font {
+        #if os(iOS)
+        _ = ThemeStore.shared.contentSizeRevision
+        let face = SHFonts.platform(mono: mono, weight: weight, size: size * ThemeStore.shared.textScale)
+        let current = UIApplication.shared.preferredContentSizeCategory
+        let category: UIContentSizeCategory = current.isAccessibilityCategory ? .extraExtraExtraLarge : current
+        let traits = UITraitCollection(preferredContentSizeCategory: category)
+        return Font(UIFontMetrics(forTextStyle: style.uiTextStyle).scaledFont(for: face, compatibleWith: traits) as CTFont)
+        #else
+        return shFace(size, weight: weight, mono: mono, style: style)
+        #endif
+    }
+
     @MainActor private static func shFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, style: SHTextStyle) -> Font {
         #if os(iOS)
         _ = ThemeStore.shared.contentSizeRevision

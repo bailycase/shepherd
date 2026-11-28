@@ -79,9 +79,9 @@ struct PadOverview: View {
                 HStack(spacing: SH.Space.m) {
                     if sidebarHidden { PadSidebarButton() }
                     HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        Text("Overview").font(.shBarSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !model.hosts.isEmpty {
-                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                            Text(model.summary).font(.shBarSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -104,12 +104,13 @@ struct PadOverview: View {
                 ToolbarItem(placement: .topBarLeading) {
                     // The board's head: "Overview" over its summary.
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        Text("Overview").font(.shBarSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !model.hosts.isEmpty {
-                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                            Text(model.summary).font(.shBarSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                         }
                     }
                     .fixedSize()
+                    .shBarTitleType()
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isHeader)
                 }
@@ -117,11 +118,11 @@ struct PadOverview: View {
             }
             // Search and More in one capsule, New thread beside it (DuoOpenOverview, iPadOverview).
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                Button { SearchHooks.open(navigator: navigator) } label: { DuoStripLabel("Search", systemImage: "magnifyingglass") }
                 StopAllWorkingMenu()
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
+                Button { NewThreadHooks.open(navigator: navigator) } label: { DuoStripLabel("New thread", systemImage: "plus") }
                     .buttonStyle(.glassProminent)
                     .tint(Color.sh.primary)
                     .accessibilityIdentifier("overview-toolbar-new-thread")
@@ -146,7 +147,9 @@ private struct OverviewColumns: View {
             } else {
                 ForEach(model.needsYou) { item in
                     // Tapping the card outside its answers opens its thread, as its Open does.
-                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id], overview: true)
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id],
+                                  // The Duo's inner display draws the phone's card (DuoOpenOverview); the iPad's, the overview's (iPadOverview).
+                                  overview: navigator.hingeClosed == nil)
                         .contentShape(.rect)
                         .onTapGesture { navigator.open(projects.route(item)) }
                 }

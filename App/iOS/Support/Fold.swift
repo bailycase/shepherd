@@ -152,3 +152,38 @@ struct DuoTopEdge: ViewModifier {
         }
     }
 }
+
+// MARK: The bars' column
+
+extension MobileLayout {
+    /// A glyph in the column iPhone Duo's bars make at its side. The system draws the glass (a 48pt-wide pill of 44pt buttons) and
+    /// nothing in it can be resized; the boards' glyphs are lighter and smaller than the system's 17pt (DuoOpenOverview, DuoClosedHome:
+    /// the magnifier, plus and compose measure 15pt against the system's 17), except the side pane's, which the board draws smaller (DuoOpenThread).
+    static let stripGlyph: CGFloat = 15
+    static let stripPaneGlyph: CGFloat = 14
+}
+
+/// A bar button's icon, drawn at the boards' size where the bars run down the side (iPhone Duo); the system's size elsewhere. A label style
+/// does not reach it (the system draws the column's glyph itself), so it is the button's own label, a glyph with its font.
+struct DuoStripLabel: View {
+    let title: String
+    let systemImage: String
+    var size: CGFloat = MobileLayout.stripGlyph
+    // The bar's own environment does not say which way it runs (`toolbarVerticalEdge` is not set for a toolbar's items), but only an
+    // iPhone Duo has a hinge, and every pose of it draws the bars as the column at its side.
+    @Environment(MobileNavigator.self) private var navigator
+
+    init(_ title: String, systemImage: String, size: CGFloat = MobileLayout.stripGlyph) {
+        self.title = title
+        self.systemImage = systemImage
+        self.size = size
+    }
+
+    var body: some View {
+        if navigator.hingeClosed != nil {
+            Image(systemName: systemImage).font(.system(size: size)).accessibilityLabel(title)
+        } else {
+            Label(title, systemImage: systemImage)
+        }
+    }
+}

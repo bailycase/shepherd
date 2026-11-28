@@ -143,7 +143,7 @@ struct ThreadScreen: View {
                     ToolbarItem(placement: .topBarLeading) { PadSidebarButton(inBar: true) }
                 }
                 if !inlineTitle {
-                    ToolbarItem(placement: .principal) {
+                    ToolbarItem(placement: .principal) { Group {
                         // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`), and the column's own
                         // buttons end its row (iPadReview, iPadThread) instead of sitting at the window's edge above the pane.
                         HStack(spacing: SH.Space.m) {
@@ -165,7 +165,7 @@ struct ThreadScreen: View {
                         // The bar sizes the title to what it holds, so the column's width is asked for to carry the buttons to its end.
                         .frame(minWidth: besidePane ? titleMaxWidth.map { $0 - 2 * MobileLayout.padThreadGutter } : nil,
                                maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
-                    }
+                    }.shBarTitleType() }
                 }
                 if !besidePane || inlineTitle {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -389,8 +389,8 @@ struct ThreadTranscript: View {
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.padThreadColumn : .infinity)
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, tailGap)
-                // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
-                .environment(\.shUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
+                // iPad bubbles (iPadThread) are wider than the phone's and the Duo's (DuoOpenThread).
+                .environment(\.shUserBubbleMetrics, sizeClass == .regular && navigator.hingeClosed == nil ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.
@@ -714,10 +714,10 @@ struct ThreadTitle: View {
             HStack(spacing: SH.Space.m) {
                 // A thread another thread started names it: a link where it opens (a phone has no room, so it sits in the status line).
                 if wide, let parent {
-                    parentName(parent).font(.sh(.title, weight: .regular)).layoutPriority(-1)
-                    Text("/").font(.sh(.title, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                    parentName(parent).font(.shBar(.title, weight: .regular)).layoutPriority(-1)
+                    Text("/").font(.shBar(.title, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                 }
-                Text(name).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text(name).font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             }
             statusLine
         }
@@ -753,14 +753,14 @@ struct ThreadTitle: View {
             if wide { ThreadGoalHeader(store: goalStore, time: goalTime) }
             if let branch {
                 Text("·").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                Text(branch.branch).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                Text(branch.branch).font(.shBar(.mono)).foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1).truncationMode(.tail)
                 if wide, let host = branch.host {
                     Text("· \(host)").foregroundStyle(Color.sh.textTertiary).lineLimit(1).layoutPriority(-1)
                 }
             }
         }
-        .font(.sh(.caption))
+        .font(.shBar(.caption))
         .lineLimit(1)
     }
 }
@@ -796,7 +796,7 @@ private struct ThreadSidePaneButton: View {
 
     var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
-        Button(label, systemImage: "sidebar.right", action: action)
+        Button(action: action) { DuoStripLabel(label, systemImage: "sidebar.right", size: MobileLayout.stripPaneGlyph) }
             .tint(isOn ? Color.sh.lantern : Color.sh.textPrimary)
             .accessibilityAddTraits(isOn ? .isSelected : [])
     }

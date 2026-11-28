@@ -13,6 +13,8 @@ extension MobileLayout {
     static let newThreadThumbnail: CGFloat = 56
     /// The iPad's repo, host, worktree and model popovers.
     static let newThreadPopoverWidth: CGFloat = 380
+    /// A New thread row narrower than this (Slide Over's 320pt window) stacks its repo, host and model instead of cutting them.
+    static let newThreadRowStackWidth: CGFloat = 300
     static let newThreadPopoverMaxWidth: CGFloat = 640
     /// The repo, worktree and model popovers' ideal height (the host popover's is its rows'). With less
     /// room under their anchor they get shorter and scroll under their header.
@@ -32,7 +34,7 @@ struct NewThreadWhereItRuns: View {
                     VStack(alignment: .leading, spacing: SH.Space.xxl) {
                         NewThreadSection("Repo") { SHGroupCard { NewThreadRepoSummary(model: model) } }
                         NewThreadSection("Host") { NewThreadHostList(model: model, carded: true) }
-                        NewThreadWorktreeCard(model: model).id(NewThreadModel.Panel.worktree)
+                        NewThreadSection("Branch") { NewThreadWorktreeCard(model: model) }.id(NewThreadModel.Panel.worktree)
                     }
                     .padding(.horizontal, MobileLayout.gutter)
                     .padding(.vertical, SH.Space.xl)
@@ -385,9 +387,8 @@ struct NewThreadWorktreeCard: View {
                           : NewThreadRules.worktreeCaption(base: model.base.base),
                       problem: supported ? nil : model.host.map { "Update Shepherd on \($0.name) to start threads in a new worktree." }) {
                 Toggle("New worktree", isOn: Binding(get: { on }, set: { model.setWorktree($0) }))
-                    .toggleStyle(.shSwitch)
+                    // The system's switch, as MobileWorkspace draws it (the merge sheet's are the same).
                     .labelsHidden()
-                    .shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlL)
                     .disabled(!supported || model.noSpace)
             }
             if on {
@@ -425,9 +426,7 @@ struct NewThreadWorktreeCard: View {
                 }
                 SHCardRow("Fetch origin first", description: "Resolves the base again after a fetch.") {
                     Toggle("Fetch origin first", isOn: Binding(get: { model.base.fetchFirst }, set: { model.setFetchFirst($0) }))
-                        .toggleStyle(.shSwitch)
                         .labelsHidden()
-                        .shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlL)
                         .disabled(model.base.resolving)
                 }
             }

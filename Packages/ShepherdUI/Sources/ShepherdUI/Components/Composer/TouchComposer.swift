@@ -24,7 +24,11 @@ public enum SHTouchComposerMetrics {
     /// Command rows the list shows before it scrolls.
     public static let commandRows = 5
     /// The command name's column on a wide composer (iPad); a phone stacks name over description.
-    public static let commandNameWidth: CGFloat = 180
+    public static let commandNameWidth: CGFloat = 190
+    public static let commandNameSize: CGFloat = 14
+    public static let commandRuleInset: CGFloat = 44
+    /// The menu's header (iPadPortrait's `.gt-qh`).
+    public static let commandHeaderHeight: CGFloat = 42
 }
 
 /// The thread's field on every touch screen (MobileThread, MobileQueue, iPadThread, DuoClosedThread boards): one pill, the
@@ -37,6 +41,7 @@ public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Acti
     let field: Field
     let trailing: Trailing
     let action: Action
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder trailing: () -> Trailing,
                 @ViewBuilder action: () -> Action) {
@@ -49,20 +54,44 @@ public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Acti
     public var body: some View {
         let M = SHTouchComposerMetrics.self
         let shape = RoundedRectangle(cornerRadius: M.capsuleHeight / 2)
-        HStack(alignment: .bottom, spacing: M.gap) {
-            if let leading {
-                leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+        Group {
+            if typeSize.isAccessibilitySize {
+                // From the accessibility sizes the words take the pill's whole width and the buttons sit in a row under them: beside
+                // the model's name the field was a few letters wide.
+                VStack(alignment: .leading, spacing: 0) {
+                    field
+                        .padding(.vertical, SH.Space.m)
+                        .padding(.horizontal, SH.Space.xl - M.leadingPadding)
+                        .frame(maxWidth: .infinity, minHeight: M.capsuleHeight, alignment: .leading)
+                    HStack(alignment: .center, spacing: M.gap) {
+                        if let leading {
+                            leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+                        }
+                        Spacer(minLength: 0)
+                        trailing
+                            .frame(minHeight: M.capsuleHeight)
+                            .layoutPriority(1)
+                        action
+                            .frame(minHeight: M.capsuleHeight)
+                    }
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: M.gap) {
+                    if let leading {
+                        leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+                    }
+                    field
+                        .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
+                        .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
+                        .frame(minHeight: M.capsuleHeight, alignment: .leading)
+                    // The model's name is read whole; the words give way to it.
+                    trailing
+                        .frame(minHeight: M.capsuleHeight)
+                        .layoutPriority(1)
+                    action
+                        .frame(minHeight: M.capsuleHeight)
+                }
             }
-            field
-                .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
-                .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
-                .frame(minHeight: M.capsuleHeight, alignment: .leading)
-            // The model's name is read whole; the words give way to it.
-            trailing
-                .frame(minHeight: M.capsuleHeight)
-                .layoutPriority(1)
-            action
-                .frame(minHeight: M.capsuleHeight)
         }
         .padding(.leading, M.leadingPadding)
         .padding(.trailing, M.trailingPadding)
@@ -115,8 +144,8 @@ public struct SHTouchCommand: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The commands a "/…" draft matches (iPadPortrait board): "Commands" and "n of m", then one
-/// 44pt row per command, the typed prefix in semibold. A phone stacks each name over its
+/// The commands a "/…" draft matches (iPadPortrait board): "Commands" over the count of matches (or "n of m" before anything is typed),
+/// then one 44pt row per command, the typed prefix in semibold. A phone stacks each name over its
 /// description; a wide composer puts them side by side. Past `commandRows` rows it scrolls.
 public struct SHTouchCommandList: View {
     let commands: [SHTouchCommand]
@@ -138,43 +167,45 @@ public struct SHTouchCommandList: View {
 
     public var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        let shape = RoundedRectangle(cornerRadius: SHSidebarMetrics.touchPanelRadius)
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title).shSectionLabel().foregroundStyle(sh.textTertiary)
+            HStack(spacing: SH.Space.m) {
+                Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textSecondary)
+                Text(query.isEmpty ? "\(commands.count) of \(total)" : "\(commands.count) match “/\(query)”")
+                    .font(.sh(.ui)).foregroundStyle(sh.textTertiary).monospacedDigit()
                 Spacer(minLength: SH.Space.m)
-                Text("\(commands.count) of \(total)").font(.sh(.mono)).foregroundStyle(sh.textTertiary).monospacedDigit()
             }
-            .padding(.horizontal, SH.Space.l)
-            .padding(.top, SH.Space.m)
-            .padding(.bottom, SH.Space.xs)
+            .padding(.leading, SH.Space.xl)
+            .padding(.trailing, SH.Space.s)
+            .frame(height: SHTouchComposerMetrics.commandHeaderHeight)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
             if commands.isEmpty {
                 Text("No command matches").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
-                    .padding(.horizontal, SH.Space.l)
+                    .padding(.horizontal, SH.Space.xl)
                     .frame(minHeight: SHTouchComposerMetrics.commandRowHeight)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(commands) { command in
+                            // The board's hairline between rows, from the name's column to the edge.
+                            if command.id != commands.first?.id { SHHairline().padding(.leading, SHTouchComposerMetrics.commandRuleInset) }
                             Button { onChoose(command) } label: { row(command) }
-                                .buttonStyle(.shRow(radius: SH.Radius.s))
+                                .buttonStyle(.shRow(radius: 0))
                                 .accessibilityLabel("/\(command.name)" + (command.arguments.map { " \($0)" } ?? "")
                                                     + (command.description.map { ", \($0)" } ?? ""))
                         }
                     }
-                    .padding(.horizontal, SH.Space.xs)
-                    .padding(.bottom, SH.Space.xs)
+                    .padding(.bottom, SH.Space.s)
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: CGFloat(SHTouchComposerMetrics.commandRows) * SHTouchComposerMetrics.commandRowHeight + SH.Space.xs)
+                .frame(maxHeight: CGFloat(SHTouchComposerMetrics.commandRows) * SHTouchComposerMetrics.commandRowHeight + SH.Space.s)
                 .fixedSize(horizontal: false, vertical: commands.count <= SHTouchComposerMetrics.commandRows)
             }
         }
         .background(sh.bgRaised, in: shape)
         .clipShape(shape)
-        .shBorder(sh.lineStrong, radius: SH.Radius.l)
+        .shBorder(sh.lineStrong, radius: SHSidebarMetrics.touchPanelRadius)
     }
 
     @ViewBuilder private func row(_ command: SHTouchCommand) -> some View {
@@ -182,30 +213,28 @@ public struct SHTouchCommandList: View {
         // Only a name that starts with the query shows it typed; one that merely contains it is plain.
         let prefix = command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
         let typed = Text(String(command.name.prefix(prefix))).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
-        let rest = Text(String(command.name.dropFirst(prefix))).foregroundStyle(sh.textSecondary)
+        let rest = Text(String(command.name.dropFirst(prefix))).foregroundStyle(sh.textPrimary)
         let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(sh.textTertiary)
-        let name = Text("\(Text("/").foregroundStyle(sh.textSecondary))\(typed)\(rest)\(arguments)")
+        let name = Text("\(Text("/").foregroundStyle(sh.textPrimary))\(typed)\(rest)\(arguments)")
         let layout = wide
             ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: SH.Space.l))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: SH.Space.xxs))
         HStack(spacing: SH.Space.m) {
             layout {
-                name.font(.sh(.code)).lineLimit(1)
+                name.font(.shMono(SHTouchComposerMetrics.commandNameSize)).lineLimit(1)
                     .frame(width: wide ? SHTouchComposerMetrics.commandNameWidth : nil, alignment: .leading)
                 if let description = command.description {
-                    Text(description).font(.sh(wide ? .ui : .caption, weight: .regular)).foregroundStyle(sh.textSecondary)
+                    Text(description).font(wide ? .shSans(SHTouchComposerMetrics.commandNameSize) : .sh(.caption, weight: .regular)).foregroundStyle(sh.textSecondary)
                         .lineLimit(wide ? 1 : 2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let tag = command.tag {
-                Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                    .padding(.horizontal, SH.Space.s)
-                    .padding(.vertical, SH.Space.xxs)
-                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                // A word at the row's end, as the board has it.
+                Text(tag).font(.sh(.ui)).foregroundStyle(sh.textTertiary)
             }
         }
-        .padding(.horizontal, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
         .padding(.vertical, SH.Space.s)
         .frame(minHeight: SHTouchComposerMetrics.commandRowHeight)
         .contentShape(Rectangle())

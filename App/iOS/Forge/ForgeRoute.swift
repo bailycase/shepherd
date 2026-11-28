@@ -55,17 +55,19 @@ extension MobileLayout {
     /// A pull request beside its diff (iPadPRChanges).
     static let forgeDetailBesideDiffWidth: CGFloat = 420
     /// The detail's readable measure on iPad.
-    static let forgeDetailMaxWidth: CGFloat = 640
+    static let forgeDetailMaxWidth: CGFloat = 720
+    /// An iPad detail's page inset and its head's leading space (iPadIPReview: 32).
+    static let forgePadInset: CGFloat = SH.Space.xxxl
     /// The review and comment sheets' text box before it grows.
     static let forgeEditorMinHeight: CGFloat = 120
     /// The list's title on the phone (the boards' 28pt).
     static let forgeListTitle: CGFloat = 28
     /// An item's title (the boards' 22pt).
     static let forgeItemTitle: CGFloat = 22
-    /// A review or merge sheet's share of the screen, the page showing above it.
-    static let forgeSheetFraction: CGFloat = 0.68
-    /// The merge sheet's, taller for its banner and three switches (MobilePRMerge).
-    static let forgeMergeSheetFraction: CGFloat = 0.78
+    /// A review or merge sheet's share of the screen's height under the status bar, the page showing above it: the boards' sheets start
+    /// 112pt down a 844pt screen (MobilePRReview, MobilePRMerge).
+    static let forgeSheetFraction: CGFloat = 0.945
+    static let forgeMergeSheetFraction: CGFloat = forgeSheetFraction
     /// An Activity comment's author initial.
     static let forgeAvatar: CGFloat = 24
 }

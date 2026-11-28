@@ -36,23 +36,23 @@ struct ForgeDiffScreen: View {
         .navigationTitle(parts.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 VStack(spacing: SH.Space.xxs) {
                     Text(parts.name)
-                        .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
+                        .font(.shBarMono(MobileLayout.touchBodyFont - 1, .semibold))
                         .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let summary {
                         Text("\(parts.directory.isEmpty ? "" : "\(parts.directory) \u{00B7} ")+\(summary.added) \u{2212}\(summary.removed)")
-                            .font(.sh(.caption))
+                            .font(.shBar(.caption))
                             .foregroundStyle(Color.sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
                 }
                 .accessibilityElement(children: .combine)
-            }
+            }.shBarTitleType() }
             ToolbarItem(placement: .topBarTrailing) {
                 let viewed = summary?.viewed == true
                 Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : SHGlyph.resolved.symbolName) {
