@@ -75,8 +75,9 @@ public enum DesignRenderBudget {
         memory >= wideMemory && heat <= .fair && !lowPower && !strained ? wide : base
     }
 
-    /// Renders that may run at once beside `live` live boards: never fewer than one.
-    public static func renders(webViews cap: Int, live: Int) -> Int { max(1, cap - live) }
+    /// Renders that may run at once beside `live` live boards: the slot of a live board is always kept free (a canvas
+    /// takes its live view the moment it is zoomed in, and the total must never pass `cap`), and one render always runs.
+    public static func renders(webViews cap: Int, live: Int) -> Int { max(1, cap - max(live, 1)) }
 }
 
 /// Split View's "Send to the thread" (iPadSplitView): the boards the viewer chose, as images for

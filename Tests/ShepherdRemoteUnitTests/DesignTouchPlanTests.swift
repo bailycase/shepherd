@@ -27,9 +27,11 @@ struct DesignTouchPlanTests {
         #expect(DesignRenderBudget.webViews(memory: 7_500_000_000, heat: .nominal, lowPower: false, strained: false) == DesignRenderBudget.wide)
     }
 
-    @Test func liveBoardsTakeFromTheRendersButOneAlwaysRuns() {
-        #expect(DesignRenderBudget.renders(webViews: 4, live: 0) == 4)
+    @Test func aLiveBoardsSlotIsKeptFreeAndOneRenderAlwaysRuns() {
+        #expect(DesignRenderBudget.renders(webViews: 4, live: 0) == 3)
         #expect(DesignRenderBudget.renders(webViews: 4, live: 1) == 3)
+        #expect(DesignRenderBudget.renders(webViews: 4, live: 2) == 2)
+        #expect(DesignRenderBudget.renders(webViews: 2, live: 0) == 1)
         #expect(DesignRenderBudget.renders(webViews: 2, live: 1) == 1)
         #expect(DesignRenderBudget.renders(webViews: 2, live: 5) == 1)
     }

@@ -77,6 +77,7 @@ final class PadDesignRendering {
         // two designs at once) takes it from every other.
         host.claiming = { [weak self, weak host] in
             guard let self, let host else { return }
+            self.rasterizer.makeRoom()
             for other in self.hosts.values where other !== host { other.yieldLive() }
         }
         if !forgottenHosts.contains(ref.host) { hosts[ref] = host }
@@ -673,6 +674,7 @@ final class PadDesignRasterizer {
     /// busy the renderers are), one not kept is drawn when a web view is free.
     private func run() {
         let cap = DesignRenderBudget.renders(webViews: Self.webViewCap, live: liveViews())
+        trimIdle(to: cap)
         var index = 0
         while index < queue.count {
             let job = queue[index]
@@ -799,6 +801,19 @@ final class PadDesignRasterizer {
             guard let self, !Task.isCancelled, self.active == 0, self.queue.isEmpty else { return }
             self.dismissIdle()
         }
+    }
+
+    /// Web views left idle beyond what `renders` allow (the budget fell: a live board took a slot, or the device is under strain).
+    private func trimIdle(to renders: Int) {
+        while active + idle.count > renders, let view = idle.popLast() {
+            view.removeFromSuperview()
+            webViews -= 1
+        }
+    }
+
+    /// A live board is about to take a web view: the idle ones that would pass the budget go first.
+    func makeRoom() {
+        trimIdle(to: DesignRenderBudget.renders(webViews: Self.webViewCap, live: liveViews() + 1))
     }
 
     private func dismissIdle() {
